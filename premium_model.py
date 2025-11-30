@@ -103,11 +103,14 @@ class InsurancePricingModel:
         sev_pred = self.sev_model.predict(input_df)[0]
 
         pure_premium = freq_pred * sev_pred
+        gross_annual_prem = pure_premium * 2.5 / (1-0.55)
 
         return {
             "predicted_frequency": float(freq_pred),
             "predicted_severity": float(sev_pred),
-            "pure_premium": float(pure_premium)
+            "pure_premium": float(pure_premium),
+            "gross_prem": float(gross_annual_prem)
+            
         }
 
 if __name__ == "__main__":
@@ -130,6 +133,7 @@ if __name__ == "__main__":
         print(f"Predicted Frequency: {result['predicted_frequency']:.4f}")
         print(f"Predicted Severity:  {result['predicted_severity']:.2f}")
         print(f"Pure Premium:        {result['pure_premium']:.2f}")
+        print(f"Gross Annual Premium:{result['gross_prem']:.2f}")
         
     except FileNotFoundError:
         print("CSVs not found")

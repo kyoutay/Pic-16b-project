@@ -1,8 +1,22 @@
-from flask import Flask, render_template_string, request, redirect, url_for
+
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Created on Sun Nov 30 15:50:18 2025
+
+@author: diegoperez
+"""
+
+from flask import Flask, render_template_string, request, redirect, url_for, jsonify
 import pandas as pd
+import numpy as np
 import os
 import sys
 from premium_model import InsurancePricingModel
+import subprocess
+import threading
+import plotly.express as px
+import plotly.io as pio
 
 app = Flask(__name__)
 
@@ -38,6 +52,234 @@ def get_city_density(location):
         return float(density)
     return None
 
+scraper_status = {'running': False, 'complete': False}
+# Stores the most recently submitted user profile so other routes can access
+# the user's driver age and city density when computing premiums. default values to create dictionary that is later updated with 
+user_profile = {
+  'DrivAge': 30,
+  'Density': 1000,
+  'Location': None
+}
+
+def generate_recs(df, brand_pref, price_pref, price_weight, mpg_pref, mpg_weight, 
+                  size_pref, size_weight):
+    """
+    Generates TOP 5 car recommendations based on user preferences.
+
+    Parameters:
+    - df: DataFrame containing car data with columns: Model, Brand, Year, Price, 
+          CTY_MPG, HWAY_MPG, Size (this data was collected by web scrapers)
+    - brand_pref: list object containing preferred brands
+    - price_pref: preferred price point (float)
+    - price_weight: importance of price (int from 0-10)
+    - mpg_pref: preferred MPG (float)
+    - mpg_weight: importance of MPG (int from 0-10)
+    - size_pref: preferred size (float)
+    - size_weight: importance of size (int from 0-10)
+
+    Returns:
+    - DataFrame with top 5 recommended cars and their attributes
+    """
+
+    df = df.copy()
+
+    # Calculates average MPG
+    df['Avg MPG'] = df[['CTY MPG', 'HWAY MPG']].mean(axis=1)
+
+    # Consider brand preferences
+    if brand_pref:
+        df = df[df['Brand'].isin(brand_pref)]
+
+    if df.empty:
+        return pd.DataFrame()
+
+    # Creates score column to determine 'TOP 5' recommendations
+    df['Score'] = 0.0
+
+    # Calculates Price Score
+    if price_weight > 0:
+        price_diff = abs(df['Price'] - price_pref)
+        max_diff = price_diff.max()
+        if max_diff > 0:
+            price_score = 1 - (price_diff / max_diff)
+            df['Score'] += price_score * price_weight
+
+    # Calculates MPG Score
+    if mpg_weight > 0:
+        mpg_diff = abs(df['Avg MPG'] - mpg_pref)
+        max_diff = mpg_diff.max()
+        if max_diff > 0:
+            mpg_score = 1 - (mpg_diff / max_diff)
+            df['Score'] += mpg_score * mpg_weight
+
+    # Calculates Size Score
+    if size_weight > 0:
+        size_diff = abs(df['Size'] - size_pref)
+        max_diff = size_diff.max()
+        if max_diff > 0:
+            size_score = 1 - (size_diff / max_diff)
+            df['Score'] += size_score * size_weight
+        else:
+            # All sizes are the same
+            df['Score'] += size_weight
+
+    # Sorts cars by score and gets TOP 5
+    top_5 = df.nlargest(5, 'Score')[['Model', 'Brand', 'Year', 'Price', 
+                                       'CTY MPG', 'HWAY MPG', 'Size']]
+
+    return top_5.reset_index(drop=True)
+
+def run_scraper(script_name):
+    """Runs a scraper script and suppresses output so program doesn't print anything"""
+    print(f"\n--- Starting {script_name} ---")
+    try:
+        subprocess.run(
+            [sys.executable, script_name],
+            check=True 
+        )
+        print(f"--- Successfully finished {script_name} ---")
+    except subprocess.CalledProcessError as e:
+        print(f"!!! CRITICAL FAILURE in {script_name}. Script exited with error code {e.returncode}. !!!")
+        raise e
+    except Exception as e:
+        print(f"!!! UNEXPECTED ERROR: {e} !!!")
+        raise
+
+def run_scrapers_background():
+    """Runs both web scrapers in the background"""
+    global scraper_status
+    scraper_status['running'] = True
+    scraper_status['complete'] = False
+    
+    run_scraper('Honda_Official.py')
+    run_scraper('Toyota_Official.py')
+    run_scraper('Rec_Generator.py')
+    
+    scraper_status['running'] = False
+    scraper_status['complete'] = True
+    
+def generate_report(recommendations, user_profile=None):
+    # Compute premiums first before creating visualizations
+    print("Computing premiums for recommended vehicles...")
+    # If no profile supplied, fall back to the module-level user_profile
+    if user_profile is None:
+      user_profile = globals().get('user_profile', {'DrivAge': 30, 'Density': 1000})
+    
+    premiums = []
+    for index, car in recommendations.iterrows():
+      # Prefer Avg MPG if available, otherwise average CTY/HWAY MPG
+      if 'Avg MPG' in recommendations.columns:
+        mpg = float(car.get('Avg MPG', np.nan))
+      else:
+        cty = float(car.get('CTY MPG', np.nan)) if not pd.isna(car.get('CTY MPG', np.nan)) else 0.0
+        hwy = float(car.get('HWAY MPG', np.nan)) if not pd.isna(car.get('HWAY MPG', np.nan)) else 0.0
+        mpg = (cty + hwy) / 2.0 if (cty or hwy) else 0.0
+
+      vehpower = 13975 * np.exp(-0.27 * mpg) + 4 #mpg to vehpower conversion model found as per mpg_to_VehPower_model.ipynb
+
+      user_data = {
+        'VehPower': float(vehpower),
+        'VehAge': 1,
+        'Density': float(user_profile.get('Density', 1000)), # gets from user profile, otherwise defaults to 1000 if unvailable
+        'DrivAge': int(user_profile.get('DrivAge', 30)) # gets from user profile, otherwise defaults to 30 if unavailable
+      }
+
+      try:
+        pred = pricing_model.get_pure_premium(user_data)
+        gross = float(pred.get('gross_prem', np.nan))
+      except Exception as e:
+        print(f"Error computing premium for {car.get('Model', 'Unknown')}: {e}")
+        gross = float('nan')
+
+      print(f"{int(car.get('Year',0))} {car.get('Brand','')} {car.get('Model','')}: MPG={mpg:.2f} VehPower={vehpower:.2f} GrossPrem={gross:.2f}")
+      premiums.append(gross)
+
+    # Attach premiums to recommendations DataFrame
+    recommendations = recommendations.copy()
+    recommendations['GrossPremium'] = premiums
+    
+    # Create a unique label for each car sso plotly doesn't combine
+    recommendations['CarLabel'] = (recommendations.index.astype(str) + ': ' +
+                                     recommendations['Year'].astype(int).astype(str) + ' ' + 
+                                     recommendations['Brand'] + ' ' + 
+                                     recommendations['Model'])
+    
+    # Creates Visualizations
+    print("Generating visualizations...")
+    os.makedirs('figures', exist_ok=True)
+    
+    fig1 = px.bar(recommendations, x='CarLabel', y='Price', height=400)
+    fig1.write_image("figures/wheel_png_1.png", scale=2)
+    
+    fig2 = px.bar(recommendations, x='CarLabel', y='CTY MPG', height=400)
+    fig2.write_image("figures/wheel_png_2.png", scale=2)
+    
+    fig3 = px.bar(recommendations, x='CarLabel', y='HWAY MPG', height=400)
+    fig3.write_image("figures/wheel_png_3.png", scale=2)
+    
+    fig4 = px.bar(recommendations, x='CarLabel', y='GrossPremium', height=400)
+    fig4.write_image("figures/wheel_png_4.png", scale=2)
+    
+    print("Visualizations complete")
+    
+    # Creates Recommendation Text File
+    print("Generating recommendations.tex...")
+    latex_list = ""
+    for index, car in recommendations.iterrows():
+        car_name = f"{int(car['Year'])} {car['Brand']} {car['Model']}" 
+        latex_list += f"\\item {car_name}.\n"
+    
+    with open("recommendations.tex", "w") as f:
+        f.write(latex_list)
+    print("recommendations.tex generated!")
+    
+    # Creates Recommendation Summary Text File
+    print("Generating rec_summary.text...")
+    latex_recs =""
+    i = 0
+    for index, car in recommendations.iterrows():
+        car_name = f"{int(car['Year'])} {car['Brand']} {car['Model']}"
+        i = i + 1
+        if i == 5:
+            latex_recs += f"and {car_name}"
+        else:
+            latex_recs += f"{car_name}, "
+    with open("rec_summary.tex", "w") as f:
+         f.write(latex_recs)
+    print("rec_summary.tex generated!")  
+    
+    # Write per-car premium summary to premium.tex
+    with open("premium.tex", "w") as f:
+      f.write("\\begin{itemize}\n")
+      for idx, car in recommendations.iterrows():
+        car_name = f"{int(car['Year'])} {car['Brand']} {car['Model']}"
+        prem = car.get('GrossPremium', float('nan'))
+        if pd.isna(prem):
+          f.write(f"\\item {car_name}: premium unavailable\n")
+        else:
+          f.write(f"\\item {car_name}: \\$ {prem:.2f}\n")
+      f.write("\\end{itemize}\n")
+    print("premium.tex generated!")  
+
+    # Compiles PDF 
+    print("\nCompiling LaTeX to PDF...")
+    try:
+        result = subprocess.run(
+            ['pdflatex', '-interaction=nonstopmode', 'Report_Template.tex'], 
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        # Runs twice for proper formatting
+        subprocess.run(
+            ['pdflatex', '-interaction=nonstopmode', 'Report_Template.tex'], 
+            capture_output=True,
+            check=True
+        )
+        print("PDF generated: Report_Template.pdf")
+    except subprocess.CalledProcessError as e:
+        print("Compilation failed. Reading error log...")
+
 HOME_HTML = '''
 <!DOCTYPE html>
 <html>
@@ -52,15 +294,94 @@ HOME_HTML = '''
                      padding: 0.8em 1.8em; cursor: pointer; margin-top: 15px;
                      box-shadow: 0 2px 4px rgba(140,180,214,0.05); transition: background 0.2s; }
       .profile-btn:hover { background: #0098db; }
+      .scraper-btn { background: #28a745; color: #fff; border: none; border-radius: 6px; font-size: 1.09em; 
+                     padding: 0.8em 1.8em; cursor: pointer; margin-top: 15px;
+                     box-shadow: 0 2px 4px rgba(140,180,214,0.05); transition: background 0.2s; }
+      .scraper-btn:hover { background: #218838; }
+      .scraper-btn:disabled { background: #6c757d; cursor: not-allowed; }
+      .button-group { display: flex; flex-direction: column; gap: 10px; align-items: center; }
+      .status-message { margin-top: 15px; padding: 10px; border-radius: 6px; font-size: 0.95em; }
+      .status-success { background: #d4edda; color: #155724; }
+      .status-running { background: #fff3cd; color: #856404; }
+      
+      /* Loading spinner */
+      .spinner {
+        border: 3px solid #f3f3f3;
+        border-top: 3px solid #28a745;
+        border-radius: 50%;
+        width: 30px;
+        height: 30px;
+        animation: spin 1s linear infinite;
+        margin: 10px auto;
+        display: none;
+      }
+      
+      @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+      }
     </style>
+    <script>
+      let checkInterval;
+      
+      function runScrapers() {
+        const btn = document.getElementById('scraperBtn');
+        const statusDiv = document.getElementById('status');
+        const spinner = document.getElementById('spinner');
+        
+        btn.disabled = true;
+        btn.textContent = 'Running Scrapers...';
+        statusDiv.className = 'status-message status-running';
+        statusDiv.textContent = 'Scrapers are running. This may take several minutes...';
+        statusDiv.style.display = 'block';
+        spinner.style.display = 'block';
+        
+        fetch('/run_scrapers', { method: 'POST' })
+          .then(response => response.json())
+          .then(data => {
+            // Start checking status every 2 seconds
+            checkInterval = setInterval(checkScraperStatus, 2000);
+          })
+          .catch(error => {
+            btn.disabled = false;
+            btn.textContent = 'Run Web Scrapers';
+            statusDiv.textContent = 'Error starting scrapers';
+            spinner.style.display = 'none';
+          });
+      }
+      
+      function checkScraperStatus() {
+        fetch('/scraper_status')
+          .then(response => response.json())
+          .then(data => {
+            if (data.complete) {
+              clearInterval(checkInterval);
+              const btn = document.getElementById('scraperBtn');
+              const statusDiv = document.getElementById('status');
+              const spinner = document.getElementById('spinner');
+              
+              btn.disabled = false;
+              btn.textContent = 'Run Web Scrapers';
+              statusDiv.className = 'status-message status-success';
+              statusDiv.textContent = 'Scrapers completed! CSV files have been created.';
+              spinner.style.display = 'none';
+            }
+          });
+      }
+    </script>
 </head>
 <body>
   <div class="container">
     <h1>Welcome</h1>
     <p>Click below to create your user profile.</p>
-    <form action="{{ url_for('profile') }}">
-      <button class="profile-btn" type="submit">Create Profile</button>
-    </form>
+    <div class="button-group">
+      <form action="{{ url_for('profile') }}">
+        <button class="profile-btn" type="submit">Create Profile</button>
+      </form>
+      <button class="scraper-btn" id="scraperBtn" onclick="runScrapers()">Run Web Scrapers</button>
+      <div class="spinner" id="spinner"></div>
+      <div id="status" class="status-message" style="display: none;"></div>
+    </div>
   </div>
 </body>
 </html>
@@ -104,24 +425,6 @@ PROFILE_HTML = '''
         <input id="age" name="age" type="number" min="0" max="120" required>
       </div>
       <div class="form-row">
-        <label for="commuter">Commuter Miles per Week</label>
-        <input id="commuter" name="commuter" type="number" min="0" step="1" placeholder="Miles driven per week" required>
-      </div>
-      <div class="form-row">
-        <label for="gender">Gender</label>
-        <select id="gender" name="gender" required>
-          <option value="">Select...</option>
-          <option>Female</option>
-          <option>Male</option>
-          <option>Non-binary</option>
-          <option>Prefer not to say</option>
-        </select>
-      </div>
-      <div class="form-row">
-        <label for="income">Income</label>
-        <input id="income" name="income" type="number" min="0" step="1000" placeholder="USD" required>
-      </div>
-      <div class="form-row">
         <label for="location">Location</label>
         <input id="location" name="location" type="text" placeholder="City, State" required>
       </div>
@@ -132,9 +435,6 @@ PROFILE_HTML = '''
         <h4>Your Profile:</h4>
         <ul>
           <li>Age: {{ result['age'] }}</li>
-          <li>Miles per week: {{ result['commuter'] }}</li>
-          <li>Gender: {{ result['gender'] }}</li>
-          <li>Income: ${{ result['income'] }}</li>
           <li>Location: {{ result['location'] }}</li>
           <li>City Density (people/sq km): {{ result['density'] }}</li>
         </ul>
@@ -168,63 +468,87 @@ PREFERENCES_HTML = '''
         color: #00669b;
         text-align: center;
       }
-      .radio-row {
+      .section {
+        margin-bottom: 2em;
+        padding-bottom: 1.5em;
+        border-bottom: 1px solid #e0e0e0;
+      }
+      .section:last-of-type {
+        border-bottom: none;
+      }
+      .section-title {
+        font-weight: 600;
+        font-size: 1.1em;
+        margin-bottom: 1em;
+        color: #00669b;
+      }
+      .checkbox-row {
+        margin-bottom: 0.8em;
+      }
+      .checkbox-label {
+        display: inline-flex;
+        align-items: center;
+        cursor: pointer;
+        font-size: 1.05em;
+        user-select: none;
+        padding: 0.4em 0;
+      }
+      .checkbox-label input[type="checkbox"] {
+        width: 20px;
+        height: 20px;
+        margin-right: 10px;
+        cursor: pointer;
+      }
+      .pref-row {
         display: flex;
         align-items: center;
-        margin-bottom: 1.5em;
-        font-size: 1.1em;
+        margin-bottom: 1.2em;
+        gap: 1em;
       }
       .pref-label {
-        min-width: 150px;
+        min-width: 120px;
         font-weight: 500;
-        margin-right: 14px;
+        font-size: 1.05em;
       }
-      .radio-label {
-        position: relative;
-        margin-right: 14px;
-        margin-left: 2px;
-        cursor: pointer;
-        padding-left: 24px;
-        user-select: none;
-        transition: color 0.2s;
+      .input-group {
+        display: flex;
+        align-items: center;
+        gap: 1em;
+        flex: 1;
       }
-      .radio-label input[type="radio"] {
-        opacity: 0;
-        position: absolute;
-        left: 0;
-        top: 2px;
+      .input-wrapper {
+        display: flex;
+        flex-direction: column;
+        gap: 0.3em;
       }
-      .custom-radio {
-        position: absolute;
-        left: 0;
-        top: 2px;
-        height: 18px;
-        width: 18px;
-        background-color: #f7fafc;
-        border: 2px solid #a3bcd6;
-        border-radius: 50%;
-        transition: border 0.2s;
+      .input-wrapper label {
+        font-size: 0.9em;
+        color: #666;
       }
-      .radio-label input[type="radio"]:checked ~ .custom-radio {
-        background-color: #1e90ff;
-        border-color: #1e90ff;
+      .input-wrapper input {
+        padding: 0.5em;
+        border: 1px solid #a3bcd6;
+        border-radius: 4px;
+        background: #f7fafc;
+        font-size: 1em;
+        width: 120px;
       }
-      .custom-radio:after {
-        content: "";
-        position: absolute;
-        display: none;
+      .weight-wrapper {
+        display: flex;
+        flex-direction: column;
+        gap: 0.3em;
       }
-      .radio-label input[type="radio"]:checked ~ .custom-radio:after {
-        display: block;
+      .weight-wrapper label {
+        font-size: 0.9em;
+        color: #666;
       }
-      .radio-label .custom-radio:after {
-        top: 4px;
-        left: 4px;
-        width: 8px;
-        height: 8px;
-        border-radius: 50%;
-        background: white;
-        position: absolute;
+      .weight-wrapper select {
+        padding: 0.5em;
+        border: 1px solid #a3bcd6;
+        border-radius: 4px;
+        background: #f7fafc;
+        font-size: 1em;
+        width: 80px;
       }
       button {
         background: #00669b;
@@ -241,41 +565,168 @@ PREFERENCES_HTML = '''
       button:hover {
         background: #0098db;
       }
-      ul {
-        margin-top: 1.5em;
-        padding-left: 1.8em;
+      .recommendations {
+        margin-top: 2em;
+        background: #e8f7fd;
+        border-radius: 8px;
+        padding: 1.5em;
+      }
+      .recommendations h3 {
+        color: #00669b;
+        margin-top: 0;
+        margin-bottom: 1em;
+      }
+      .car-card {
+        background: white;
+        border-radius: 8px;
+        padding: 1em;
+        margin-bottom: 1em;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+      }
+      .car-card h4 {
+        margin: 0 0 0.5em 0;
+        color: #00669b;
+      }
+      .car-details {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 0.5em;
+        font-size: 0.95em;
+      }
+      .car-details span {
+        color: #555;
+      }
+      .no-results {
+        text-align: center;
+        padding: 2em;
+        color: #666;
       }
     </style>
 </head>
 <body>
     <div class="container">
-    <h2>Set Weights for Your Preferences</h2>
+    <h2>Set Your Preferences</h2>
     <form method="post">
-      {% for pref, name in preferences %}
-        <div class="radio-row">
-          <div class="pref-label">{{ pref }}:</div>
-          <label class="radio-label">
-            <input type="radio" name="{{ name }}" value="0" required>
-            <span class="custom-radio"></span> No Preference
+      <div class="section">
+        <div class="section-title">Brand Preferences</div>
+        <div class="checkbox-row">
+          <label class="checkbox-label">
+            <input type="checkbox" name="brand_pref" value="Toyota">
+            Toyota
           </label>
-          {% for w in range(1, 11) %}
-            <label class="radio-label">
-              <input type="radio" name="{{ name }}" value="{{ w }}">
-              <span class="custom-radio"></span> {{ w }}
-            </label>
-          {% endfor %}
         </div>
-      {% endfor %}
-      <button type="submit">Submit</button>
+        <div class="checkbox-row">
+          <label class="checkbox-label">
+            <input type="checkbox" name="brand_pref" value="Honda">
+            Honda
+          </label>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Vehicle Preferences</div>
+        
+        <div class="pref-row">
+          <div class="pref-label">Price:</div>
+          <div class="input-group">
+            <div class="input-wrapper">
+              <label>Target Price ($)</label>
+              <input type="number" name="price_pref" step="0.01" min="0" placeholder="0">
+            </div>
+            <div class="weight-wrapper">
+              <label>Importance (0-10)</label>
+              <select name="price_weight">
+                <option value="0">0</option>
+                <option value="1">1</option>
+                <option value="2">2</option>
+                <option value="3">3</option>
+                <option value="4">4</option>
+                <option value="5">5</option>
+                <option value="6">6</option>
+                <option value="7">7</option>
+                <option value="8">8</option>
+                <option value="9">9</option>
+                <option value="10">10</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div class="pref-row">
+          <div class="pref-label">Number of Seats:</div>
+          <div class="input-group">
+            <div class="input-wrapper">
+              <label>Desired Seats</label>
+              <input type="number" name="size_pref" step="0.01" min="0" placeholder="0">
+            </div>
+            <div class="weight-wrapper">
+              <label>Importance (0-10)</label>
+              <select name="size_weight">
+                <option value="0">0</option>
+                <option value="1">1</option>
+                <option value="2">2</option>
+                <option value="3">3</option>
+                <option value="4">4</option>
+                <option value="5">5</option>
+                <option value="6">6</option>
+                <option value="7">7</option>
+                <option value="8">8</option>
+                <option value="9">9</option>
+                <option value="10">10</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div class="pref-row">
+          <div class="pref-label">MPG:</div>
+          <div class="input-group">
+            <div class="input-wrapper">
+              <label>Target MPG</label>
+              <input type="number" name="mpg_pref" step="0.01" min="0" placeholder="0">
+            </div>
+            <div class="weight-wrapper">
+              <label>Importance (0-10)</label>
+              <select name="mpg_weight">
+                <option value="0">0</option>
+                <option value="1">1</option>
+                <option value="2">2</option>
+                <option value="3">3</option>
+                <option value="4">4</option>
+                <option value="5">5</option>
+                <option value="6">6</option>
+                <option value="7">7</option>
+                <option value="8">8</option>
+                <option value="9">9</option>
+                <option value="10">10</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <button type="submit">Get Recommendations</button>
     </form>
-    {% if result %}
-      <div>
-        <h3>Result</h3>
-        <ul>
-        {% for pref, val in result.items() %}
-          <li>{{ pref }}: {% if val == '0' %}No Preference{% else %}{{ val }}{% endif %}</li>
-        {% endfor %}
-        </ul>
+    {% if recommendations is not none %}
+      <div class="recommendations">
+        <h3>Top 5 Recommended Vehicles</h3>
+        {% if recommendations|length > 0 %}
+          {% for idx, car in recommendations.iterrows() %}
+            <div class="car-card">
+              <h4>{{ car['Year'] }} {{ car['Brand'] }} {{ car['Model'] }}</h4>
+              <div class="car-details">
+                <span><strong>Price:</strong> ${{ "%.2f"|format(car['Price']) }}</span>
+                <span><strong>Seats:</strong> {{ car['Size']|int }}</span>
+                <span><strong>City MPG:</strong> {{ car['CTY MPG']|int }}</span>
+                <span><strong>Highway MPG:</strong> {{ car['HWAY MPG']|int }}</span>
+              </div>
+            </div>
+          {% endfor %}
+        {% else %}
+          <div class="no-results">
+            <p>No vehicles match your preferences. Try adjusting your criteria or run the web scrapers to update inventory.</p>
+          </div>
+        {% endif %}
       </div>
     {% endif %}
     </div>
@@ -287,60 +738,122 @@ PREFERENCES_HTML = '''
 def home():
     return render_template_string(HOME_HTML)
 
+@app.route('/run_scrapers', methods=['POST'])
+def run_scrapers():
+    """Triggers web scrapers so they can start extracting car attribute data"""
+    global scraper_status
+    scraper_status['running'] = False
+    scraper_status['complete'] = False
+    
+    # Run scrapers in a background thread so the request returns immediately
+    thread = threading.Thread(target=run_scrapers_background)
+    thread.daemon = True
+    thread.start()
+    return jsonify({'status': 'started'})
+
+@app.route('/scraper_status', methods=['GET'])
+def check_scraper_status():
+    """Checks status of web scrapers to determine if data extraction is complete"""
+    global scraper_status
+    return jsonify(scraper_status)
+
 @app.route('/profile', methods=['GET', 'POST'])
 def profile():
+    global user_profile
     result = None
     if request.method == 'POST':
         location = request.form['location']
         density = get_city_density(location)
         age = int(request.form['age'])
         
-        # Get premium prediction using age and density
-        user_data = {
-            'VehPower': 5,
-            'VehAge': 1,
-            'Density': density if density else 1000,  # Use density or default
-            'DrivAge': age
-        }
+        # Store user profile globally so it can be accessed in generate_report
+        user_profile['DrivAge'] = age
+        user_profile['Density'] = density if density else 1000
+        user_profile['Location'] = location
         
-        premium_prediction = pricing_model.get_pure_premium(user_data)
+        # # Get premium prediction using age and density
+        # user_data = {
+        #     'VehPower': 5,
+        #     'VehAge': 1,
+        #     'Density': density if density else 1000,  # Use density or default
+        #     'DrivAge': age
+        # }
         
-        # Print to console
-        print(f"\n--- Premium Prediction for User ---")
-        print(f"Input Data: {user_data}")
-        print(f"Predicted Frequency: {premium_prediction['predicted_frequency']:.4f}")
-        print(f"Predicted Severity: {premium_prediction['predicted_severity']:.2f}")
-        print(f"Pure Premium: {premium_prediction['pure_premium']:.2f}")
-        print(f"Gross Annual Premium: {premium_prediction['gross_prem']:.2f}")
-        sys.stdout.flush()
+        # premium_prediction = pricing_model.get_pure_premium(user_data)
+        
+        # # Print to console
+        # print(f"\n--- Premium Prediction for User ---")
+        # print(f"Input Data: {user_data}")
+        # print(f"Predicted Frequency: {premium_prediction['predicted_frequency']:.4f}")
+        # print(f"Predicted Severity: {premium_prediction['predicted_severity']:.2f}")
+        # print(f"Pure Premium: {premium_prediction['pure_premium']:.2f}")
+        # print(f"Gross Annual Premium: {premium_prediction['gross_prem']:.2f}")
+        # sys.stdout.flush()
         
         result = {
             'age': request.form['age'],
-            'commuter': request.form['commuter'],
-            'gender': request.form['gender'],
-            'income': request.form['income'],
             'location': location,
             'density': f"{density:.1f}" if density else "Not found",
-            'premium': f"${premium_prediction['gross_prem']:.2f}" if density else "N/A"
         }
     return render_template_string(PROFILE_HTML, result=result)
 
 @app.route('/preferences', methods=['GET', 'POST'])
 def preferences():
-    pref_names = [
-        ("Fuel Efficiency", "weight_fuel"),
-        ("Size", "weight_size"),
-        ("Drive", "weight_drive"),
-        ("Transmission", "weight_transmission"),
-    ]
-    result = None
+    global user_profile
+    recommendations = None
     if request.method == 'POST':
-        result = {}
-        for pref, name in pref_names:
-            val = request.form.get(name, '0')
-            result[pref] = val
-    return render_template_string(PREFERENCES_HTML, preferences=pref_names, result=result)
+        # Brand preferences
+        brand_pref = request.form.getlist('brand_pref')
+        
+        # Price preference
+        price_pref = request.form.get('price_pref', '')
+        price_pref = float(price_pref) if price_pref else 0.0
+        price_weight = int(request.form.get('price_weight', 0))
+        
+        # Size preference
+        size_pref = request.form.get('size_pref', '')
+        size_pref = float(size_pref) if size_pref else 0.0
+        size_weight = int(request.form.get('size_weight', 0))
+        
+        # MPG preference
+        mpg_pref = request.form.get('mpg_pref', '')
+        mpg_pref = float(mpg_pref) if mpg_pref else 0.0
+        mpg_weight = int(request.form.get('mpg_weight', 0))
+        
+        # Debugging Print Statements
+        print(f"\n--- User Preferences ---")
+        print(f"brand_pref: {brand_pref}")
+        print(f"price_pref: {price_pref}, price_weight: {price_weight}")
+        print(f"size_pref: {size_pref}, size_weight: {size_weight}")
+        print(f"mpg_pref: {mpg_pref}, mpg_weight: {mpg_weight}")
+        sys.stdout.flush()
+        
+        # Loads inventory dataframe and generates recommendations based on user preferences
+        try:
+            inventory_df = pd.read_csv('Wheelfinder_Inventory.csv')
+            recommendations = generate_recs(
+                inventory_df,
+                brand_pref,
+                price_pref,
+                price_weight,
+                mpg_pref,
+                mpg_weight,
+                size_pref,
+                size_weight
+            )
+            print(f"\n--- Generated Recommendations ---")
+            print(recommendations)
+            sys.stdout.flush()
+            generate_report(recommendations, user_profile)
+            
+        except FileNotFoundError:
+            print("Wheelfinder_Inventory.csv not found. Please run the web scrapers first.")
+            recommendations = pd.DataFrame()
+        except Exception as e:
+            print(f"Error generating recommendations: {e}")
+            recommendations = pd.DataFrame()
+        
+    return render_template_string(PREFERENCES_HTML, recommendations=recommendations)
 
 if __name__ == '__main__':
-    app.run(debug=True, use_reloader=False)
-
+    app.run(debug=True, use_reloader=False, port=8000)

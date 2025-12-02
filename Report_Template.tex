@@ -1,0 +1,61 @@
+\documentclass[10pt, a4paper]{article}
+
+% Basic packages only
+\usepackage{graphicx}
+\usepackage[margin=0.7in]{geometry}
+
+\title{\textbf{Your Recommendation Report}}
+\date{}
+
+\begin{document}
+\maketitle
+
+% List of recommendations
+\begin{center}
+    \begin{enumerate}
+        \input{recommendations.tex}
+    \end{enumerate}
+\end{center}
+
+\vspace{1cm}
+
+% First row of images
+\noindent
+\begin{minipage}[t]{0.48\textwidth}
+    \centering
+    \textbf{Price Comparison of Top 5}
+    
+    \includegraphics[width=\linewidth]{figures/wheel_png_1.png}
+\end{minipage}%
+\hfill%
+\begin{minipage}[t]{0.48\textwidth}
+    \centering
+    \textbf{City MPG Comparison of Top 5}
+    
+    \includegraphics[width=\linewidth]{figures/wheel_png_2.png}
+\end{minipage}
+
+\vspace{0.5cm}
+
+% Second row of images
+\noindent
+\begin{minipage}[t]{0.48\textwidth}
+    \centering
+    \textbf{Highway MPG Comparison of Top 5}
+    
+    \includegraphics[width=\linewidth]{figures/wheel_png_3.png}
+\end{minipage}%
+\hfill%
+\begin{minipage}[t]{0.48\textwidth}
+    \centering
+    \textbf{Annual Premium Comparison of Top 5}
+    
+    \includegraphics[width=\linewidth]{figures/wheel_png_4.png}
+\end{minipage}
+
+\vspace{1cm}
+
+\section*{Summary}
+\noindent Based on your preferences, the five cars best fit for you are the \input{rec_summary.tex}! Furthermore, your estimated premiums based on your profile and these vehicles are \input{premium.tex}. The fourth plot above compares your estimated premium for each of the five recommended cars. Please make sure to consider other factors before you make your final decision to purchase a car. Safe travels!
+
+\end{document}

@@ -1,4 +1,3 @@
-
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
@@ -53,13 +52,6 @@ def get_city_density(location):
     return None
 
 scraper_status = {'running': False, 'complete': False}
-# Stores the most recently submitted user profile so other routes can access
-# the user's driver age and city density when computing premiums. default values to create dictionary that is later updated with 
-user_profile = {
-  'DrivAge': 30,
-  'Density': 1000,
-  'Location': None
-}
 
 def generate_recs(df, brand_pref, price_pref, price_weight, mpg_pref, mpg_weight, 
                   size_pref, size_weight):
@@ -158,66 +150,25 @@ def run_scrapers_background():
     scraper_status['running'] = False
     scraper_status['complete'] = True
     
-def generate_report(recommendations, user_profile=None):
-    # Compute premiums first before creating visualizations
-    print("Computing premiums for recommended vehicles...")
-    # If no profile supplied, fall back to the module-level user_profile
-    if user_profile is None:
-      user_profile = globals().get('user_profile', {'DrivAge': 30, 'Density': 1000})
-    
-    premiums = []
-    for index, car in recommendations.iterrows():
-      # Prefer Avg MPG if available, otherwise average CTY/HWAY MPG
-      if 'Avg MPG' in recommendations.columns:
-        mpg = float(car.get('Avg MPG', np.nan))
-      else:
-        cty = float(car.get('CTY MPG', np.nan)) if not pd.isna(car.get('CTY MPG', np.nan)) else 0.0
-        hwy = float(car.get('HWAY MPG', np.nan)) if not pd.isna(car.get('HWAY MPG', np.nan)) else 0.0
-        mpg = (cty + hwy) / 2.0 if (cty or hwy) else 0.0
-
-      vehpower = 13975 * np.exp(-0.27 * mpg) + 4 #mpg to vehpower conversion model found as per mpg_to_VehPower_model.ipynb
-
-      user_data = {
-        'VehPower': float(vehpower),
-        'VehAge': 1,
-        'Density': float(user_profile.get('Density', 1000)), # gets from user profile, otherwise defaults to 1000 if unvailable
-        'DrivAge': int(user_profile.get('DrivAge', 30)) # gets from user profile, otherwise defaults to 30 if unavailable
-      }
-
-      try:
-        pred = pricing_model.get_pure_premium(user_data)
-        gross = float(pred.get('gross_prem', np.nan))
-      except Exception as e:
-        print(f"Error computing premium for {car.get('Model', 'Unknown')}: {e}")
-        gross = float('nan')
-
-      print(f"{int(car.get('Year',0))} {car.get('Brand','')} {car.get('Model','')}: MPG={mpg:.2f} VehPower={vehpower:.2f} GrossPrem={gross:.2f}")
-      premiums.append(gross)
-
-    # Attach premiums to recommendations DataFrame
-    recommendations = recommendations.copy()
-    recommendations['GrossPremium'] = premiums
-    
-    # Create a unique label for each car sso plotly doesn't combine
-    recommendations['CarLabel'] = (recommendations.index.astype(str) + ': ' +
-                                     recommendations['Year'].astype(int).astype(str) + ' ' + 
-                                     recommendations['Brand'] + ' ' + 
-                                     recommendations['Model'])
-    
+def generate_report(recommendations):
     # Creates Visualizations
     print("Generating visualizations...")
     os.makedirs('figures', exist_ok=True)
     
-    fig1 = px.bar(recommendations, x='CarLabel', y='Price', height=400)
+    fig1 = px.bar(recommendations, x='Model', y='Price', 
+                  title='', height=400)
     fig1.write_image("figures/wheel_png_1.png", scale=2)
     
-    fig2 = px.bar(recommendations, x='CarLabel', y='CTY MPG', height=400)
+    fig2 = px.bar(recommendations, x='Model', y='CTY MPG', 
+                  title='', height=400)
     fig2.write_image("figures/wheel_png_2.png", scale=2)
     
-    fig3 = px.bar(recommendations, x='CarLabel', y='HWAY MPG', height=400)
+    fig3 = px.bar(recommendations, x='Model', y='HWAY MPG', 
+                  title='', height=400)
     fig3.write_image("figures/wheel_png_3.png", scale=2)
     
-    fig4 = px.bar(recommendations, x='CarLabel', y='GrossPremium', height=400)
+    fig4 = px.bar(recommendations, x='Model', y='Price', 
+                   title='', height=400)
     fig4.write_image("figures/wheel_png_4.png", scale=2)
     
     print("Visualizations complete")
@@ -248,29 +199,6 @@ def generate_report(recommendations, user_profile=None):
          f.write(latex_recs)
     print("rec_summary.tex generated!")  
     
-    # Write per-car premium summary to premium.tex
-    # with open("premium.tex", "w") as f:
-    #   for idx, car in recommendations.iterrows():
-    #     car_name = f"{int(car['Year'])} {car['Brand']} {car['Model']}"
-    #     prem = car.get('GrossPremium', float('nan'))
-    #     if pd.isna(prem):
-    #       f.write(f"\\item {car_name}: premium unavailable\n")
-    #     else:
-    #       f.write(f"\\item {car_name}: \\$ {prem:.2f}\n")
-    # print("premium.tex generated!")  
-
-    # Creates premium summary to premium.tex
-    print("Generating premium.tex...")
-    prem_list = ""
-    for index, car in recommendations.iterrows():
-        car_name = f"{int(car['Year'])} {car['Brand']} {car['Model']}" 
-        prem = car.get('GrossPremium', float('nan'))
-        prem_list += f"\\item {car_name}: \\$ {prem:.2f}\n"
-
-    with open("premium.tex", "w") as f:
-        f.write(prem_list)
-    print("premium.tex generated!")
-
     # Compiles PDF 
     print("\nCompiling LaTeX to PDF...")
     try:
@@ -769,47 +697,41 @@ def check_scraper_status():
 
 @app.route('/profile', methods=['GET', 'POST'])
 def profile():
-    global user_profile
     result = None
     if request.method == 'POST':
         location = request.form['location']
         density = get_city_density(location)
         age = int(request.form['age'])
         
-        # Store user profile globally so it can be accessed in generate_report
-        user_profile['DrivAge'] = age
-        user_profile['Density'] = density if density else 1000
-        user_profile['Location'] = location
+        # Get premium prediction using age and density
+        user_data = {
+            'VehPower': 5,
+            'VehAge': 1,
+            'Density': density if density else 1000,  # Use density or default
+            'DrivAge': age
+        }
         
-        # # Get premium prediction using age and density
-        # user_data = {
-        #     'VehPower': 5,
-        #     'VehAge': 1,
-        #     'Density': density if density else 1000,  # Use density or default
-        #     'DrivAge': age
-        # }
+        premium_prediction = pricing_model.get_pure_premium(user_data)
         
-        # premium_prediction = pricing_model.get_pure_premium(user_data)
-        
-        # # Print to console
-        # print(f"\n--- Premium Prediction for User ---")
-        # print(f"Input Data: {user_data}")
-        # print(f"Predicted Frequency: {premium_prediction['predicted_frequency']:.4f}")
-        # print(f"Predicted Severity: {premium_prediction['predicted_severity']:.2f}")
-        # print(f"Pure Premium: {premium_prediction['pure_premium']:.2f}")
-        # print(f"Gross Annual Premium: {premium_prediction['gross_prem']:.2f}")
-        # sys.stdout.flush()
+        # Print to console
+        print(f"\n--- Premium Prediction for User ---")
+        print(f"Input Data: {user_data}")
+        print(f"Predicted Frequency: {premium_prediction['predicted_frequency']:.4f}")
+        print(f"Predicted Severity: {premium_prediction['predicted_severity']:.2f}")
+        print(f"Pure Premium: {premium_prediction['pure_premium']:.2f}")
+        print(f"Gross Annual Premium: {premium_prediction['gross_prem']:.2f}")
+        sys.stdout.flush()
         
         result = {
             'age': request.form['age'],
             'location': location,
             'density': f"{density:.1f}" if density else "Not found",
+            'premium': f"${premium_prediction['gross_prem']:.2f}" if density else "N/A"
         }
     return render_template_string(PROFILE_HTML, result=result)
 
 @app.route('/preferences', methods=['GET', 'POST'])
 def preferences():
-    global user_profile
     recommendations = None
     if request.method == 'POST':
         # Brand preferences
@@ -854,7 +776,7 @@ def preferences():
             print(f"\n--- Generated Recommendations ---")
             print(recommendations)
             sys.stdout.flush()
-            generate_report(recommendations, user_profile)
+            generate_report(recommendations)
             
         except FileNotFoundError:
             print("Wheelfinder_Inventory.csv not found. Please run the web scrapers first.")

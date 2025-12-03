@@ -539,8 +539,7 @@ df
 df2 = df
 new_order = ['Model', 'Make', 'Year', 'Transmission', 'Price', 'Body Style', 'MPG', 'Fuel Type']
 df2 = df2[new_order]
-df2.rename(columns={'Make':'Brand', 'Body Style':'Body Type', 'Fuel Type':'Engine'})
-
+df2 = df2.rename(columns={'Make':'Brand', 'Body Style':'Body Type', 'Fuel Type':'Engine'})
 
 # In[12]:
 

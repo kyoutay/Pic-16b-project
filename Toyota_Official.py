@@ -1,11 +1,3 @@
-#!/usr/bin/env python
-# coding: utf-8
-
-# In[4]:
-
-
-#pip install selenium beautifulsoup4 webdriver_manager
-
 from bs4 import BeautifulSoup as bs
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
@@ -212,19 +204,9 @@ df1 = pd.DataFrame(car_table)
 
 # Combines df1 and df2 to create a Pandas dataframe with all the desired information
 result_df = pd.concat([df2, df1], axis=1)
-result_df
-
-
-# In[5]:
-
 
 new_order = ['Model', 'Brand', 'Year', 'Transmission', 'Price', 'Body Type', 'MPG', 'Engine']
 toyota_df = result_df[new_order]
 toyota_df
-
-
-# In[6]:
-
-
 toyota_df.to_csv('Toyota.csv', index=False)
 

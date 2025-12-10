@@ -17,4 +17,4 @@
 
 # Group Contributions
 Diego: Constructed Wheel Finder's web scrapers, designed Wheel Finder's UI using Flask, created the recommendation function, and created the report template using Latex.  
-Kyle: 
+Kyle: Built Claims Frequency Model and Claims Severity Model, integrated ad hoc calculations and processes to WheelFinder

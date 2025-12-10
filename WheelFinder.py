@@ -287,18 +287,6 @@ def generate_report(recommendations, user_profile=None):
          f.write(latex_recs)
     print("rec_summary.tex generated!")  
     
-    # Write per-car premium summary to premium.tex
-    # with open("premium.tex", "w") as f:
-    #   for idx, car in recommendations.iterrows():
-    #     car_name = f"{int(car['Year'])} {car['Brand']} {car['Model']}"
-    #     prem = car.get('GrossPremium', float('nan'))
-    #     if pd.isna(prem):
-    #       f.write(f"\\item {car_name}: premium unavailable\n")
-    #     else:
-    #       f.write(f"\\item {car_name}: \\$ {prem:.2f}\n")
-    # print("premium.tex generated!")  
-
-    # Creates premium summary to premium.tex
     print("Generating premium.tex...")
     prem_list = ""
     for index, car in recommendations.iterrows():

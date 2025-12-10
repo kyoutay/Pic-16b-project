@@ -53,9 +53,9 @@ class InsurancePricingModel:
 
         self.freq_model = xgb.XGBRegressor(
             objective='count:poisson',
-            n_estimators=100,
+            n_estimators=200,
             learning_rate=0.1,
-            max_depth=4,
+            max_depth=6,
             n_jobs=-1,
             random_state=42
         )
@@ -68,9 +68,9 @@ class InsurancePricingModel:
 
         self.sev_model = xgb.XGBRegressor(
             objective='reg:gamma',
-            n_estimators=100,
-            learning_rate=0.05,
-            max_depth=3,
+            n_estimators=200,
+            learning_rate=0.1,
+            max_depth=4,
             base_score=y_sev.mean(),
             n_jobs=-1,
             random_state=42

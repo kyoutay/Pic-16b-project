@@ -1,15 +1,3 @@
-#!/usr/bin/env python
-# coding: utf-8
-
-# In[2]:
-
-
-#pip install webdriver-manager
-
-
-# In[3]:
-
-
 import time
 from urllib.parse import urljoin
 from selenium import webdriver
@@ -90,10 +78,6 @@ for url in links:
         first_instance[model_key] = url
 
 unique_model_urls = list(first_instance.values())
-
-
-# In[6]:
-
 
 import undetected_chromedriver as uc
 from selenium.webdriver.common.by import By
@@ -205,7 +189,7 @@ def scrape_car_data(driver, url, debug=False):
             except:
                 pass
 
-        # FExtract from JSON-LD or structured data
+        # Extract from JSON-LD or structured data
         if 'Model' not in car_data or not car_data['Model']:
             json_patterns = [
                 r'"model"[:\s]+"([^"]+)"',
@@ -530,19 +514,8 @@ def scrape_all_cars(urls, debug_first=False):
     return df
 
 df = scrape_all_cars(unique_model_urls, debug_first=True)
-df
-
-
-# In[11]:
-
-
 df2 = df
 new_order = ['Model', 'Make', 'Year', 'Transmission', 'Price', 'Body Style', 'MPG', 'Fuel Type']
 df2 = df2[new_order]
 df2 = df2.rename(columns={'Make':'Brand', 'Body Style':'Body Type', 'Fuel Type':'Engine'})
-
-# In[12]:
-
-
 df2.to_csv('Honda.csv', index=False)
-

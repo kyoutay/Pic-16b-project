@@ -2,11 +2,18 @@ from bs4 import BeautifulSoup as bs
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
+import json
+import pandas as pd
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from bs4 import BeautifulSoup
+import time
 
 options = webdriver.ChromeOptions()
-options.add_argument('--headless')
-options.add_argument('--no-sandbox')
-options.add_argument('--disable-dev-shm-usage')
+options.add_argument('--headless') # runs Chrome w/o opening any visible windows
+options.add_argument('--no-sandbox') # disables Chrome's sandbox security mechanism
+options.add_argument('--disable-dev-shm-usage') # uses regular filesystem instead to store more info w/o crashing
 
 # This initializes the driver using 'Service' and 'options' keyword arguments
 driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
@@ -36,9 +43,6 @@ soup = bs(page_source, 'html.parser')
 # Selects div tags with all car attributes from car listings
 results = soup.select('div.row.mb-5.mt-2')
 
-import json
-import pandas as pd
-
 # Populates 'car_list' with all the car attribute data for our first dataframe
 car_list = []
 for result in results:
@@ -59,8 +63,6 @@ for result in results:
 car_list
 df2 = pd.DataFrame(car_list)
 
-import json
-
 # Populates 'car_url_list' with all the URLs of each new car in Toyota's inventory
 car_url_list = []
 for result in results:
@@ -70,15 +72,6 @@ for result in results:
         if json_text:
             car_data = json.loads(json_text)
             car_url_list.append(car_data.get('offers', {}).get('url'))
-
-from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
-from webdriver_manager.chrome import ChromeDriverManager
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from bs4 import BeautifulSoup
-import time
 
 options = webdriver.ChromeOptions()
 options.add_argument("--headless")
@@ -99,10 +92,6 @@ for url in car_url_list:
         )
     except Exception as e:
         print(f"Timed out for {url}: {e}")
-
-    # Remove the explicit sleep, if not needed:
-    #time.sleep(3)
-
     soup = BeautifulSoup(driver.page_source, "html.parser")
     results = soup.select("div.details-value")
     result_list.extend(results)
@@ -143,8 +132,6 @@ for i in range(0, len(cars)):
     elif len(car) > 7:
         new_car = car[0:7]
         cars[i] = new_car
-
-import pandas as pd
 
 # Defines a function to create a dictionary from each car containing their individual car attributes
 def parse_car_details(car_tags):

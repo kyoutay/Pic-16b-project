@@ -29,10 +29,13 @@ pricing_model = InsurancePricingModel()
 pricing_model.train("freMTPL2freq.csv", "freMTPL2sev.csv")
 
 def get_city_density(location):
-    """
-    Retrieve city density from uscities.csv based on user input.
-    Handles formats like "City, State" or just "City"
-    Returns density as float or None if not found
+    """Retrieves population density for a given city and state.
+    
+    Args:
+        location (str): City and state in "City, State" format.
+    
+    Returns:
+        float: Population density in people per square kilometer, or None if not found.
     """
     location = location.strip()
     
@@ -63,22 +66,25 @@ user_profile = {
 
 def generate_recs(df, brand_pref, price_pref, price_weight, mpg_pref, mpg_weight, 
                   size_pref, size_weight):
-    """
-    Generates TOP 5 car recommendations based on user preferences.
-
-    Parameters:
-    - df: DataFrame containing car data with columns: Model, Brand, Year, Price, 
-          CTY_MPG, HWAY_MPG, Size (this data was collected by web scrapers)
-    - brand_pref: list object containing preferred brands
-    - price_pref: preferred price point (float)
-    - price_weight: importance of price (int from 0-10)
-    - mpg_pref: preferred MPG (float)
-    - mpg_weight: importance of MPG (int from 0-10)
-    - size_pref: preferred size (float)
-    - size_weight: importance of size (int from 0-10)
-
+    """Generates top 5 car recommendations based on weighted user preferences.
+    
+    Calculates a composite score for each vehicle based on user preferences for brand,
+    price, MPG, and vehicle size. Weights determine the relative importance of each criterion.
+    
+    Args:
+        df (pd.DataFrame): Car inventory data with columns: Model, Brand, Year, Price,
+            CTY MPG, HWAY MPG, Size.
+        brand_pref (list): Preferred car brands (e.g., ['Toyota', 'Honda']).
+        price_pref (float): Target price point in dollars.
+        price_weight (int): Importance weight for price (0-10).
+        mpg_pref (float): Target fuel efficiency in miles per gallon.
+        mpg_weight (int): Importance weight for MPG (0-10).
+        size_pref (float): Target number of seats.
+        size_weight (int): Importance weight for size (0-10).
+    
     Returns:
-    - DataFrame with top 5 recommended cars and their attributes
+        pd.DataFrame: Top 5 recommended vehicles with columns: Model, Brand, Year,
+            Price, CTY MPG, HWAY MPG, Size. Returns empty DataFrame if no matches found.
     """
 
     df = df.copy()
@@ -130,7 +136,15 @@ def generate_recs(df, brand_pref, price_pref, price_weight, mpg_pref, mpg_weight
     return top_5.reset_index(drop=True)
 
 def run_scraper(script_name):
-    """Runs a scraper script and suppresses output so program doesn't print anything"""
+    """Executes a web scraper script and handles errors appropriately.
+    
+    Args:
+        script_name (str): Name of the Python scraper script to execute.
+    
+    Raises:
+        subprocess.CalledProcessError: If the scraper script exits with non-zero code.
+        Exception: For other unexpected errors during execution.
+    """
     print(f"\n--- Starting {script_name} ---")
     try:
         subprocess.run(
@@ -146,7 +160,11 @@ def run_scraper(script_name):
         raise
 
 def run_scrapers_background():
-    """Runs both web scrapers in the background"""
+    """Executes all web scrapers sequentially in background thread.
+    
+    Runs Honda, Toyota, and recommendation generator scrapers in order.
+    Updates the global scraper_status dictionary to track progress.
+    """
     global scraper_status
     scraper_status['running'] = True
     scraper_status['complete'] = False
@@ -159,6 +177,27 @@ def run_scrapers_background():
     scraper_status['complete'] = True
     
 def generate_report(recommendations, user_profile=None):
+    """Generates a comprehensive PDF report with vehicle recommendations and analytics.
+    
+    Creates visualizations for price, MPG, and insurance premiums, then compiles
+    a LaTeX document with recommendations and premium estimates based on the user's
+    profile (age and location density).
+    
+    Args:
+        recommendations (pd.DataFrame): DataFrame containing recommended vehicles with
+            columns: Model, Brand, Year, Price, CTY MPG, HWAY MPG, Size.
+        user_profile (dict, optional): User profile with keys 'DrivAge' and 'Density'.
+            If not provided, uses the global user_profile dictionary. Defaults to None.
+    
+    Note:
+        Generates output files:
+        - figures/wheel_png_1.png through wheel_png_4.png (visualizations)
+        - recommendations.tex (list of recommended cars)
+        - rec_summary.tex (summary of recommendations)
+        - premium.tex (insurance premiums)
+        - Report_Template.pdf (final compiled report)
+    """
+
     # Compute premiums first before creating visualizations
     print("Computing premiums for recommended vehicles...")
     # If no profile supplied, fall back to the module-level user_profile
@@ -750,7 +789,14 @@ def home():
 
 @app.route('/run_scrapers', methods=['POST'])
 def run_scrapers():
-    """Triggers web scrapers so they can start extracting car attribute data"""
+    """API endpoint to trigger web scraper execution.
+    
+    Initiates web scrapers in a background thread to collect car inventory data
+    from Honda and Toyota official sources without blocking the web request.
+    
+    Returns:
+        dict: JSON response with status indicator.
+    """
     global scraper_status
     scraper_status['running'] = False
     scraper_status['complete'] = False
@@ -763,12 +809,25 @@ def run_scrapers():
 
 @app.route('/scraper_status', methods=['GET'])
 def check_scraper_status():
-    """Checks status of web scrapers to determine if data extraction is complete"""
+    """API endpoint to check web scraper progress.
+    
+    Returns:
+        dict: JSON response with scraper status flags (running, complete).
+    """
     global scraper_status
     return jsonify(scraper_status)
 
 @app.route('/profile', methods=['GET', 'POST'])
 def profile():
+    """Handles user profile creation with age and location information.
+    
+    On GET: Displays profile form.
+    On POST: Processes submitted profile data, looks up city density, and stores
+        user information in global user_profile dictionary.
+    
+    Returns:
+        str: Rendered HTML template with profile form and results (if submitted).
+    """
     global user_profile
     result = None
     if request.method == 'POST':
@@ -809,6 +868,15 @@ def profile():
 
 @app.route('/preferences', methods=['GET', 'POST'])
 def preferences():
+    """Handles vehicle preference selection and generates recommendations.
+    
+    On GET: Displays preference form for brands, price, MPG, and vehicle size.
+    On POST: Processes preferences, generates top 5 recommendations from inventory,
+        calculates insurance premiums, and generates a PDF report.
+    
+    Returns:
+        str: Rendered HTML template with preference form and recommendations (if submitted).
+    """
     global user_profile
     recommendations = None
     if request.method == 'POST':

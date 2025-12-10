@@ -80,15 +80,28 @@ class InsurancePricingModel:
         self.is_trained = True
 
     def get_pure_premium(self, user_data: dict):
-        """
-        Calculates Pure Premium for a single user.
+        """Calculates pure and gross annual insurance premiums for a vehicle.
+        
+        Uses trained frequency and severity models to predict claim probability and
+        average claim amount, then computes the pure premium and applies loading
+        factors to calculate gross annual premium.
         
         Args:
-            user_data (dict): Dictionary containing keys:
-                              ['VehPower', 'VehAge', 'Density', 'DrivAge']
+            user_data (dict): Vehicle and driver data with keys:
+                - VehPower (float): Vehicle power rating
+                - VehAge (int): Age of vehicle in years
+                - Density (float): Population density (people per sq km)
+                - DrivAge (int): Age of driver in years
         
         Returns:
-            dict: Contains 'frequency', 'severity', and 'pure_premium'
+            dict: Contains keys:
+                - predicted_frequency (float): Expected number of claims per year
+                - predicted_severity (float): Expected cost per claim
+                - pure_premium (float): Pure premium (frequency × severity)
+                - gross_prem (float): Gross annual premium including loadings
+        
+        Raises:
+            Exception: If model has not been trained yet.
         """
         if not self.is_trained:
             raise Exception("Model is not trained yet. Call .train() first.")
@@ -119,6 +132,7 @@ if __name__ == "__main__":
     try:
         model.train("freMTPL2freq.csv", "freMTPL2sev.csv")
 
+        # default for testing the script by itself
         test_driver = {
             'VehPower': 5,
             'VehAge': 1,

@@ -298,35 +298,12 @@ def scrape_all_cars(urls, debug_first=False):
 
             if car_data:
                 cars[i] = car_data
-                # Print summary
-                summary_parts = []
-                if 'Year' in car_data:
-                    summary_parts.append(car_data['Year'])
-                if 'Make' in car_data:
-                    summary_parts.append(car_data['Make'])
-                if 'Model' in car_data:
-                    summary_parts.append(car_data['Model'])
-                if 'Trim' in car_data:
-                    summary_parts.append(f"({car_data['Trim']})")
-
-                summary = ' '.join(summary_parts) if summary_parts else 'Unknown'
-
-                extras = []
-                if 'Price' in car_data:
-                    extras.append(f"${car_data['Price']:,.0f}")
-                if 'MPG' in car_data:
-                    extras.append(f"MPG: {car_data['MPG']}")
-
-                extra_info = ' | '.join(extras) if extras else ''
-                print(f"  ✓ {summary} {f'- {extra_info}' if extra_info else ''}")
-            else:
-                print(f"  ✗ No data found")
 
             delay = random.uniform(3, 6)
             time.sleep(delay)
 
     except KeyboardInterrupt:
-        print("\n\nScraping interrupted by user. Saving data collected so far...")
+        print("\n\nScraping interrupted by user.")
     except Exception as e:
         print(f"\n\nUnexpected error: {str(e)}")
         import traceback

@@ -406,7 +406,7 @@ HOME_HTML = '''
 </head>
 <body>
   <div class="container">
-    <h1>Welcome</h1>
+    <h1>Welcome to Wheel Finder!</h1>
     <p>Click below to create your user profile.</p>
     <div class="button-group">
       <form action="{{ url_for('profile') }}">

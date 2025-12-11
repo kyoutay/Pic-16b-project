@@ -366,7 +366,7 @@ HOME_HTML = '''
         btn.disabled = true;
         btn.textContent = 'Running Scrapers...';
         statusDiv.className = 'status-message status-running';
-        statusDiv.textContent = 'Scrapers are running. This may take several minutes...';
+        statusDiv.textContent = 'Web scrapers are running. This will take approximately 30 minutes.';
         statusDiv.style.display = 'block';
         spinner.style.display = 'block';
         
@@ -397,7 +397,7 @@ HOME_HTML = '''
               btn.disabled = false;
               btn.textContent = 'Run Web Scrapers';
               statusDiv.className = 'status-message status-success';
-              statusDiv.textContent = 'Scrapers completed! CSV files have been created.';
+              statusDiv.textContent = 'Web Scrapers are Complete! Inventory has been updated.';
               spinner.style.display = 'none';
             }
           });

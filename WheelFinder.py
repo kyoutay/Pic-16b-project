@@ -312,7 +312,7 @@ def generate_report(recommendations, user_profile=None):
         )
         print("PDF generated: Report_Template.pdf")
     except subprocess.CalledProcessError as e:
-        print("Compilation failed. Reading error log...")
+        print("Compilation failed.")
 
 HOME_HTML = '''
 <!DOCTYPE html>

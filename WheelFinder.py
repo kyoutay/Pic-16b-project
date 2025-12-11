@@ -304,12 +304,6 @@ def generate_report(recommendations, user_profile=None):
             text=True,
             check=True
         )
-        # Runs twice for proper formatting
-        subprocess.run(
-            ['pdflatex', '-interaction=nonstopmode', 'Report_Template.tex'], 
-            capture_output=True,
-            check=True
-        )
         print("PDF generated: Report_Template.pdf")
     except subprocess.CalledProcessError as e:
         print("Compilation failed.")

@@ -1,12 +1,3 @@
-
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-Created on Sun Nov 30 15:50:18 2025
-
-@author: diegoperez
-"""
-
 from flask import Flask, render_template_string, request, redirect, url_for, jsonify
 import pandas as pd
 import numpy as np

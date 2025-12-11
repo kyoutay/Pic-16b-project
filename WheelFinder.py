@@ -145,18 +145,15 @@ def run_scraper(script_name):
         subprocess.CalledProcessError: If the scraper script exits with non-zero code.
         Exception: For other unexpected errors during execution.
     """
-    print(f"\n--- Starting {script_name} ---")
+    print(f"\nStarting {script_name}")
     try:
         subprocess.run(
             [sys.executable, script_name],
             check=True 
         )
-        print(f"--- Successfully finished {script_name} ---")
-    except subprocess.CalledProcessError as e:
-        print(f"!!! CRITICAL FAILURE in {script_name}. Script exited with error code {e.returncode}. !!!")
-        raise e
+        print(f"Successfully finished {script_name}")
     except Exception as e:
-        print(f"!!! UNEXPECTED ERROR: {e} !!!")
+        print(f"Error while running.")
         raise
 
 def run_scrapers_background():
@@ -828,25 +825,6 @@ def profile():
         user_profile['Density'] = density if density else 1000
         user_profile['Location'] = location
         
-        # # Get premium prediction using age and density
-        # user_data = {
-        #     'VehPower': 5,
-        #     'VehAge': 1,
-        #     'Density': density if density else 1000,  # Use density or default
-        #     'DrivAge': age
-        # }
-        
-        # premium_prediction = pricing_model.get_pure_premium(user_data)
-        
-        # # Print to console
-        # print(f"\n--- Premium Prediction for User ---")
-        # print(f"Input Data: {user_data}")
-        # print(f"Predicted Frequency: {premium_prediction['predicted_frequency']:.4f}")
-        # print(f"Predicted Severity: {premium_prediction['predicted_severity']:.2f}")
-        # print(f"Pure Premium: {premium_prediction['pure_premium']:.2f}")
-        # print(f"Gross Annual Premium: {premium_prediction['gross_prem']:.2f}")
-        # sys.stdout.flush()
-        
         result = {
             'age': request.form['age'],
             'location': location,
@@ -907,7 +885,7 @@ def preferences():
                 size_pref,
                 size_weight
             )
-            print(f"\n--- Generated Recommendations ---")
+            print(f"\nGenerated Recommendations")
             print(recommendations)
             sys.stdout.flush()
             generate_report(recommendations, user_profile)

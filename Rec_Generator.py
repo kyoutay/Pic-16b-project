@@ -1,23 +1,9 @@
-#!/usr/bin/env python
-# coding: utf-8
-
-# In[34]:
-
-
 import pandas as pd
 import numpy as np
-
-
-# In[45]:
-
 
 Honda = pd.read_csv("Honda.csv")
 Toyota = pd.read_csv("Toyota.csv")
 combined_df = pd.concat([Honda, Toyota], ignore_index=True)
-
-
-# In[46]:
-
 
 # Extract the first `## / ##` pattern from each string in MPG column
 combined_df['MPG'] = combined_df['MPG'].str.extract(r'(\d+\s*/\s*\d+)', expand=False)
@@ -56,10 +42,6 @@ combined_df["Size"] = combined_df["Body Type"].map(bodytype_to_seats)
 combined_df.drop('Body Type', axis=1, inplace=True)
 combined_df = combined_df.replace({None: np.nan})
 combined_df.to_csv('Wheelfinder_Inventory.csv', index=False, na_rep='NA')
-
-
-# In[57]:
-
 
 def generate_recs(df, brand_pref, price_pref, price_weight, mpg_pref, mpg_weight, 
                   size_pref, size_weight):

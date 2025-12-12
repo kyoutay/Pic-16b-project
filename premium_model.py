@@ -115,8 +115,8 @@ class InsurancePricingModel:
 
         sev_pred = self.sev_model.predict(input_df)[0]
 
-        pure_premium = freq_pred * sev_pred
-        gross_annual_prem = pure_premium * 2.5 / (1-0.55)
+        pure_premium = freq_pred * sev_pred # calculating pure premium 
+        gross_annual_prem = pure_premium * 2.5 / (1-0.55) # us factor over french divided by loading
 
         return {
             "predicted_frequency": float(freq_pred),

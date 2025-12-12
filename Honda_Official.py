@@ -151,43 +151,8 @@ def scrape_car_data(driver, url):
                 car_data['Body Style'] = body_match.group(1).strip()
                 break
 
-        # Extract Engine
-        engine_patterns = [
-            r'ENGINE[:\s]+([^\n<]+(?:L|liter)[^\n<]*)',
-            r'(\d+\.\d+L[^<\n]*?(?:I-?\d+|V-?\d+)[^<\n]*)',
-            r'"engine"[:\s]+"([^"]+)"',
-            r'Engine[:\s]+([^\n<]+)'
-        ]
-        for pattern in engine_patterns:
-            engine_match = re.search(pattern, page_text, re.IGNORECASE)
-            if engine_match and 'Engine' not in car_data:
-                engine = engine_match.group(1).strip()
-                engine = re.sub(r'\\n.*', '', engine).strip()
-                if engine and len(engine) < 100:
-                    car_data['Engine'] = engine
-                    break
-
-        # Extract Transmission
-        trans_patterns = [
-            r'TRANSMISSION[:\s]+([^\n<]+)',
-            r'Transmission[:\s]+([^\n<]+)',
-            r'"transmission"[:\s]+"([^"]+)"',
-            r'(CVT\s*/\s*(?:FWD|RWD|AWD|4WD))',
-            r'(\d+-Speed\s+(?:Automatic|Manual)[^\n<]*)',
-            r'(CVT[^\n<]*)'
-        ]
-        for pattern in trans_patterns:
-            trans_match = re.search(pattern, page_text, re.IGNORECASE)
-            if trans_match and 'Transmission' not in car_data:
-                trans = trans_match.group(1).strip()
-                trans = re.sub(r'\\n.*', '', trans).strip()
-                if trans and len(trans) < 100:
-                    car_data['Transmission'] = trans
-                    break
-                
-        # Error fix for cars with no Transmission
-        if 'Transmission' not in car_data:
-            car_data['Transmission'] = 'N/A'
+        # We don't need to extract Transmission anymore since we don't use this in our recommendation program
+        car_data['Transmission'] = 'N/A'
 
         # Extract MPG
         mpg_patterns = [
@@ -293,7 +258,7 @@ def scrape_all_cars(urls, debug_first=False):
     # Reorder columns
     desired_columns = [
         'Year', 'Make', 'Model', 'Trim',
-        'Price', 'MPG', 'Engine', 'Transmission',
+        'Price', 'MPG', 'Transmission',
         'Body Style', 'Fuel Type', 
         'url'
     ]

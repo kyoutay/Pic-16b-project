@@ -215,41 +215,17 @@ def scrape_car_data(driver, url):
             r'"price"[:\s]+(\d+)',
             r'>\s*\$\s*([\d,]+)\s*<'
         ]
-
-        # Extract Price
-        try:
-            price_elements = driver.find_elements(By.XPATH, 
-                "//*[contains(@class, 'price') or contains(@class, 'PRICE')] | " +
-                "//*[contains(text(), '$')]"
-            )
-            for elem in price_elements:
-                text = elem.text
-                price_match = re.search(r'\$\s*([\d,]+)', text)
-                if price_match:
-                    price_str = price_match.group(1).replace(',', '')
-                    try:
-                        price = float(price_str)
-                        if 10000 <= price <= 200000 and 'Price' not in car_data:
-                            car_data['Price'] = price
-                            break
-                    except:
-                        pass
-        except:
-            pass
-
-        # If price not found, try patterns on page text
-        if 'Price' not in car_data:
-            for pattern in price_patterns:
-                price_match = re.search(pattern, page_text, re.IGNORECASE)
-                if price_match:
-                    price_str = price_match.group(1).replace(',', '')
-                    try:
-                        price = float(price_str)
-                        if 10000 <= price <= 200000:
-                            car_data['Price'] = price
-                            break
-                    except:
-                        pass
+        for pattern in price_patterns:
+            price_match = re.search(pattern, page_text, re.IGNORECASE)
+            if price_match:
+                price_str = price_match.group(1).replace(',', '')
+                try:
+                    price = float(price_str)
+                    if 10000 <= price <= 200000:
+                        car_data['Price'] = price
+                        break
+                except:
+                    pass
 
         # Extract Fuel Type
         fuel_patterns = [
